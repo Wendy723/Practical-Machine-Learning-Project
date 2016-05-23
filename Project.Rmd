@@ -1,0 +1,123 @@
+---
+title: "Practical Machine Learning Project"
+author: "Hechuan"
+date: "May 22, 2016"
+output: html_document
+---
+## Introduction  
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. The goal of this project was to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+
+## Liberary Packages   
+```{r, cache = T, warning=FALSE}
+library(caret)
+library(randomForest)
+library(corrplot)
+library(rpart)
+library(rpart.plot)
+library(dplyr)
+library(rattle)
+library(rpart.plot)
+
+```
+
+## Getting and Cleaning Data
+```{r, cache = T}
+trainUrl <-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testUrl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+train <- "./data/pml-training.csv"
+test  <- "./data/pml-testing.csv"
+if (!file.exists("./data")) {
+  dir.create("./data")
+}
+if (!file.exists(train)) {
+  download.file(trainUrl, destfile=train, method="curl")
+}
+if (!file.exists(test)) {
+  download.file(testUrl, destfile=test, method="curl")
+}
+```  
+
+### Reading Train and Test Datasets
+```{r, cache = T}
+trainRaw<- read.csv("./data/pml-training.csv")
+testRaw <- read.csv("./data/pml-testing.csv")
+
+```
+ 
+
+### Cleaning data
+We cleaned the data and got rid of observations not supposed to be used in this assignment, which asked to use data from accelerometers on the belt, forearm, arm, and dumbell, so the features are extracted based on these keywords:
+
+```{r, cache = T, eval=FALSE}
+
+trainRaw_user<-trainRaw %>% select(user_name)
+trainRaw_outcome<-trainRaw %>% select(classe)
+trainRaw_predictors<-trainRaw %>% select(starts_with("accel"))
+
+training<-cbind(trainRaw_user,trainRaw_predictors,trainRaw_outcome)
+
+str(training)
+
+testRaw_user<-testRaw %>% select(user_name)
+testRaw_predictors<-testRaw %>% select(starts_with("accel"))
+
+testing<-cbind(testRaw_user,testRaw_predictors)
+```
+
+Both the cleaned train and test data set contained 19622 observations and 14 variables, including 12 predictors from the accelerometers.
+
+### Slice the data
+We split the cleaned training set into a pure training data set (75%) and a validation data set (25%). We used the validation data set to conduct cross validation in future steps.  
+```{r, cache = T}
+set.seed(12345) 
+inTrain <- createDataPartition(training$classe, p=0.75, list=F)
+trainData <- training[inTrain, ]
+testData <- training[-inTrain, ]
+```
+
+## Modeling and Prediction
+
+### Prediction with Random Forest Method
+We fitted a predictive model for activity recognition using **Random Forest** algorithm because it automatically selects important variables and is robust to correlated covariates & outliers in general. We used **6-fold cross validation** when applying the algorithm.  
+```{r, cache = T}
+controlRf <- trainControl(method="cv", 6)
+Rf <- train(classe ~ ., data=trainData, method="rf", trControl=controlRf, ntree=250)
+Rf
+
+predictRf <- predict(Rf, testData)
+confusionMatrix(testData$classe, predictRf)
+sampleError <- 1 - as.numeric(confusionMatrix(testData$classe, predictRf)$overall[1])
+sampleError
+
+accuracy <- postResample(predictRf, testData$classe)
+accuracy
+
+
+```
+
+The estimated accuracy of the model is 94% and the estimated out-of-sample error is 5.8%. Considering that only 12 predictors from accelerometers on the belt, forearm, arm and dumbell of 6 participants were used in the model building, the accuracy of the current model is good. 
+
+### Predicting for Test Data Set
+ 
+```{r, cache = T}
+predResult <- predict(Rf, testing)
+predResult
+```  
+
+## Submission Files Creation
+```{r}
+path<-"./answer"
+answer <- predResult
+pml_output <- function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_results/problem_id_",i,".txt")
+    write.table(x[i], file=filename, quote=FALSE,
+                row.names=FALSE, col.names=FALSE)
+  }
+}
+
+
+```
+
